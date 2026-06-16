@@ -7,6 +7,7 @@ use std::{
     fs::{self, File},
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 const USD_TO_CNY: f64 = 7.2;
@@ -51,6 +52,16 @@ struct DailyUsage {
     totals: Totals,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelDailyUsage {
+    model: String,
+    provider: String,
+    date: String,
+    requests: u64,
+    totals: Totals,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UsageReport {
@@ -62,6 +73,7 @@ struct UsageReport {
     totals: Totals,
     models: Vec<ModelUsage>,
     daily: Vec<DailyUsage>,
+    model_daily: Vec<ModelDailyUsage>,
     warnings: Vec<String>,
 }
 
@@ -71,6 +83,7 @@ struct UsageAccumulator {
     totals: Totals,
     models: HashMap<String, ModelUsage>,
     daily: HashMap<String, DailyUsage>,
+    model_daily: HashMap<String, ModelDailyUsage>,
     records_count: u64,
 }
 
@@ -124,6 +137,20 @@ impl UsageAccumulator {
             });
         daily_usage.requests += 1;
         daily_usage.totals.add(&record_totals);
+
+        let model_daily_key = format!("{model}\u{1f}{date}");
+        let model_daily_usage =
+            self.model_daily
+                .entry(model_daily_key)
+                .or_insert_with(|| ModelDailyUsage {
+                    model: model.to_string(),
+                    provider: provider_for(model).to_string(),
+                    date: date.to_string(),
+                    requests: 0,
+                    totals: Totals::default(),
+                });
+        model_daily_usage.requests += 1;
+        model_daily_usage.totals.add(&record_totals);
     }
 }
 
@@ -408,6 +435,13 @@ fn scan_usage(
     });
     let mut daily: Vec<DailyUsage> = accumulator.daily.into_values().collect();
     daily.sort_by(|a, b| a.date.cmp(&b.date));
+    let mut model_daily: Vec<ModelDailyUsage> = accumulator.model_daily.into_values().collect();
+    model_daily.sort_by(|a, b| {
+        a.model
+            .to_ascii_lowercase()
+            .cmp(&b.model.to_ascii_lowercase())
+            .then_with(|| a.date.cmp(&b.date))
+    });
 
     if models.iter().any(|model| !model.priced) {
         warnings.push("MiMo 或未知模型没有公开可核验的 token 单价，成本暂按 ¥0 计算。".into());
@@ -429,15 +463,38 @@ fn scan_usage(
         totals: accumulator.totals,
         models,
         daily,
+        model_daily,
         warnings,
     })
+}
+
+#[tauri::command]
+fn export_report(format: String, contents: String) -> Result<String, String> {
+    let extension = match format.as_str() {
+        "csv" | "json" => format,
+        _ => return Err("不支持的导出格式".into()),
+    };
+    let home = env::var("USERPROFILE").map_err(|_| "无法读取 USERPROFILE".to_string())?;
+    let downloads = PathBuf::from(&home).join("Downloads");
+    let target_dir = if downloads.is_dir() {
+        downloads
+    } else {
+        PathBuf::from(home)
+    };
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("无法生成导出时间戳：{error}"))?
+        .as_secs();
+    let path = target_dir.join(format!("token-ledger-export-{seconds}.{extension}"));
+    fs::write(&path, contents).map_err(|error| format!("无法写入导出文件：{error}"))?;
+    Ok(path.to_string_lossy().to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![scan_usage])
+        .invoke_handler(tauri::generate_handler![scan_usage, export_report])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -495,6 +552,26 @@ mod tests {
         assert!(custom);
         assert!(price.is_priced());
         assert!((totals.cost_cny - 13.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn export_report_writes_supported_formats() {
+        let home = env::temp_dir().join(format!(
+            "token-ledger-export-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(home.join("Downloads")).unwrap();
+        env::set_var("USERPROFILE", &home);
+
+        let path = export_report("csv".into(), "section,date\nsummary,".into()).unwrap();
+        assert!(path.ends_with(".csv"));
+        assert!(PathBuf::from(&path).is_file());
+        assert!(export_report("xml".into(), "<x />".into()).is_err());
+
+        fs::remove_dir_all(home).unwrap();
     }
 
     #[test]
@@ -556,5 +633,10 @@ mod tests {
         assert_eq!(accumulator.totals.cache_write_tokens, 300);
         assert_eq!(accumulator.totals.output_tokens, 400);
         assert!(accumulator.models.contains_key("mimo-auto"));
+        assert_eq!(accumulator.model_daily.len(), 1);
+        let daily = accumulator.model_daily.values().next().unwrap();
+        assert_eq!(daily.model, "mimo-auto");
+        assert_eq!(daily.date, "2026-06-12");
+        assert_eq!(daily.totals.output_tokens, 400);
     }
 }
