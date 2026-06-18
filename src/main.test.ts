@@ -123,14 +123,24 @@ describe("application navigation and pricing", () => {
     expect(document.querySelectorAll(".insight-card")).toHaveLength(4);
   });
 
-  it("keeps overview insights based on all records when the date range changes", async () => {
+  it("keeps overview insights based on all records when the custom date range changes", async () => {
     document.querySelector<HTMLButtonElement>('[data-page="overview"]')?.click();
     const before = Array.from(document.querySelectorAll(".insight-card strong")).map((item) => item.textContent);
     const callCount = invokeMock.mock.calls.length;
 
-    document.querySelector<HTMLButtonElement>('[data-days="7"]')?.click();
+    const from = document.querySelector<HTMLInputElement>("#from-date");
+    const to = document.querySelector<HTMLInputElement>("#to-date");
+    expect(from).not.toBeNull();
+    expect(to).not.toBeNull();
+    from!.value = "2026-06-11";
+    to!.value = "2026-06-12";
+    document.querySelector<HTMLButtonElement>("#apply-range")?.click();
 
     await vi.waitFor(() => expect(invokeMock.mock.calls.length).toBeGreaterThan(callCount));
+    const scanArgs = invokeMock.mock.calls.slice(callCount).filter(([command]) => command === "scan_usage").map(([, args]) => args);
+    expect(scanArgs).toContainEqual(expect.objectContaining({ from: "2026-06-11", to: "2026-06-12" }));
+    expect(scanArgs).toContainEqual(expect.objectContaining({ from: null, to: null }));
+
     const after = Array.from(document.querySelectorAll(".insight-card strong")).map((item) => item.textContent);
     expect(after).toEqual(before);
   });

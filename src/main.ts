@@ -758,10 +758,10 @@ function displayPage() {
       <div class="settings-head"><div><p class="panel-kicker">THEME</p><h2>界面主题</h2><span>选择更适合当前环境的配色方案</span></div></div>
       <div class="theme-grid">
         ${themeCard("midnight", "午夜紫", "清晰克制的默认深色主题", ["#090b10", "#9589f7", "#63c9a4"])}
-        ${themeCard("ocean", "深海蓝", "高对比低饱和冷色主题", ["#061117", "#63b5dc", "#66c9b5"])}
+        ${themeCard("ocean", "浅海蓝", "明亮低饱和冷色主题", ["#eef7fb", "#2d7fa7", "#2f8878"])}
         ${themeCard("light", "云雾白", "冷静明亮的高可读主题", ["#eef1f5", "#6558c4", "#347e68"])}
-        ${themeCard("graphite", "石墨橙", "中性炭黑与暖色强调", ["#11100f", "#d99a5b", "#68b99b"])}
-        ${themeCard("forest", "松林绿", "沉静低饱和绿色主题", ["#07130f", "#58b590", "#d0a46b"])}
+        ${themeCard("graphite", "浅石墨橙", "中性浅灰与暖色强调", ["#f3f1ee", "#b5682f", "#3f806d"])}
+        ${themeCard("forest", "晨林绿", "明亮低饱和绿色主题", ["#edf6f0", "#2f8a62", "#9a713a"])}
         ${themeCard("paper", "暖纸白", "柔和纸张与墨色主题", ["#f4efe6", "#a85f45", "#397d68"])}
       </div>
     </section>
