@@ -1,6 +1,6 @@
 {
   "name": "token-ledger",
-  "private": true,
+  "private": false,
   "version": "0.9.2",
   "type": "module",
   "scripts": {
